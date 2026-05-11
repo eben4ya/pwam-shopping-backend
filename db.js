@@ -1,6 +1,12 @@
 const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
 
-const db = new Database(process.env.DB_PATH || 'shopping.db');
+const dbPath = process.env.DB_PATH || 'shopping.db';
+const dbDir = path.dirname(dbPath);
+if (dbDir !== '.') fs.mkdirSync(dbDir, { recursive: true });
+
+const db = new Database(dbPath);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS items (
