@@ -1,6 +1,6 @@
 const Database = require('better-sqlite3');
 
-const db = new Database('shopping.db');
+const db = new Database(process.env.DB_PATH || 'shopping.db');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS items (

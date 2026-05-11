@@ -49,6 +49,10 @@ app.delete('/items/:id', (req, res) => {
   res.status(200).json({ message: 'deleted', id: Number(id) });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
