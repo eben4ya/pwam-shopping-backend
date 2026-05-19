@@ -1,22 +1,29 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const router = express.Router();
 
-const API_KEY = process.env.GEMINI_API_KEY;
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const API_KEY = process.env.OPENROUTER_API_KEY;
+const BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+const REFERER = process.env.OPENROUTER_REFERER || 'http://localhost:3000';
+const APP_TITLE = process.env.OPENROUTER_TITLE || 'PWAM Shopping List';
 
-const FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS
-  ? process.env.GEMINI_FALLBACK_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
-  : ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']);
+const PRIMARY_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free';
+
+const FALLBACK_MODELS = (process.env.OPENROUTER_FALLBACK_MODELS
+  ? process.env.OPENROUTER_FALLBACK_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
+  : [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'deepseek/deepseek-chat-v3-0324:free',
+      'mistralai/mistral-small-3.1-24b-instruct:free',
+    ]);
 
 const MODEL_CHAIN = [PRIMARY_MODEL, ...FALLBACK_MODELS.filter((m) => m !== PRIMARY_MODEL)];
 
 const SYSTEM_INSTRUCTION = `Kamu adalah asisten belanja untuk aplikasi Shopping List.
 Selalu jawab dalam Bahasa Indonesia.
 Balas HANYA dalam format JSON array of strings, contoh: ["Daging sapi 1.5 kg", "Santan kelapa 1 L"].
-Jangan menambahkan komentar, penjelasan, atau teks lain di luar daftar.
+Jangan menambahkan komentar, penjelasan, code fence, atau teks lain di luar daftar.
 Maksimal 8 item per daftar.`;
 
 const limiter = rateLimit({
@@ -25,28 +32,75 @@ const limiter = rateLimit({
   message: { error: 'Terlalu banyak permintaan AI. Coba lagi sebentar.' },
 });
 
-function isModelUnavailableError(err) {
-  const status = err?.status || err?.statusCode;
-  const msg = (err?.message || '').toLowerCase();
-  if (status === 404 || status === 503 || status === 429) return true;
-  return /not found|unavailable|overloaded|quota|deprecated|unsupported|does not exist/.test(msg);
+function isModelUnavailableError(status, body) {
+  if (status === 404 || status === 429 || status === 503 || status === 502) return true;
+  const msg = (body || '').toLowerCase();
+  return /not found|unavailable|overloaded|quota|rate limit|deprecated|unsupported|no endpoints/.test(msg);
 }
 
-async function callWithFallback(genAI, prompt) {
+function extractJsonArray(text) {
+  let s = text.trim();
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  const start = s.indexOf('[');
+  const end = s.lastIndexOf(']');
+  if (start !== -1 && end !== -1 && end > start) {
+    const slice = s.slice(start, end + 1);
+    try {
+      const parsed = JSON.parse(slice);
+      if (Array.isArray(parsed)) return parsed;
+    } catch { /* fall through */ }
+  }
+  try {
+    const parsed = JSON.parse(s);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.items)) return parsed.items;
+  } catch { /* ignore */ }
+  return null;
+}
+
+async function callModel(modelName, prompt) {
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': REFERER,
+      'X-Title': APP_TITLE,
+    },
+    body: JSON.stringify({
+      model: modelName,
+      messages: [
+        { role: 'system', content: SYSTEM_INSTRUCTION },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error(`OpenRouter ${res.status}: ${body.slice(0, 200)}`);
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Empty response from model');
+  return text;
+}
+
+async function callWithFallback(prompt) {
   let lastErr;
   for (const modelName of MODEL_CHAIN) {
     try {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: SYSTEM_INSTRUCTION,
-        generationConfig: { responseMimeType: 'application/json' },
-      });
-      const result = await model.generateContent(prompt);
-      return { text: result.response.text(), modelUsed: modelName };
+      const text = await callModel(modelName, prompt);
+      return { text, modelUsed: modelName };
     } catch (err) {
       lastErr = err;
       console.warn(`[AI] model "${modelName}" failed: ${err.message}`);
-      if (!isModelUnavailableError(err)) throw err;
+      if (!isModelUnavailableError(err.status, err.body)) throw err;
     }
   }
   throw lastErr || new Error('Semua model AI gagal');
@@ -66,18 +120,12 @@ router.post('/suggest', limiter, async (req, res) => {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(API_KEY);
-    const { text, modelUsed } = await callWithFallback(genAI, prompt.trim());
+    const { text, modelUsed } = await callWithFallback(prompt.trim());
+    const items = extractJsonArray(text);
 
-    let items;
-    try {
-      items = JSON.parse(text);
-    } catch {
+    if (!items) {
+      console.error('[AI] could not parse response:', text.slice(0, 300));
       return res.status(502).json({ error: 'AI mengembalikan format tidak valid' });
-    }
-
-    if (!Array.isArray(items)) {
-      return res.status(502).json({ error: 'AI tidak mengembalikan daftar' });
     }
 
     const clean = items
