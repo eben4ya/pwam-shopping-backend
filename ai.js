@@ -5,11 +5,11 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const router = express.Router();
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS
   ? process.env.GEMINI_FALLBACK_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
-  : ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro']);
+  : ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']);
 
 const MODEL_CHAIN = [PRIMARY_MODEL, ...FALLBACK_MODELS.filter((m) => m !== PRIMARY_MODEL)];
 
