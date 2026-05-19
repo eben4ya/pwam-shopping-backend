@@ -8,14 +8,15 @@ const BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v
 const REFERER = process.env.OPENROUTER_REFERER || 'http://localhost:3000';
 const APP_TITLE = process.env.OPENROUTER_TITLE || 'PWAM Shopping List';
 
-const PRIMARY_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free';
+const PRIMARY_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 
 const FALLBACK_MODELS = (process.env.OPENROUTER_FALLBACK_MODELS
   ? process.env.OPENROUTER_FALLBACK_MODELS.split(',').map((s) => s.trim()).filter(Boolean)
   : [
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'deepseek/deepseek-chat-v3-0324:free',
-      'mistralai/mistral-small-3.1-24b-instruct:free',
+      'qwen/qwen3-next-80b-a3b-instruct:free',
+      'openai/gpt-oss-120b:free',
+      'z-ai/glm-4.5-air:free',
+      'deepseek/deepseek-v4-flash:free',
     ]);
 
 const MODEL_CHAIN = [PRIMARY_MODEL, ...FALLBACK_MODELS.filter((m) => m !== PRIMARY_MODEL)];
