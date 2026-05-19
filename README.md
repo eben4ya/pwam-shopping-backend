@@ -42,6 +42,30 @@ Server runs at `http://localhost:3000` (or the port you set in `.env`).
 
 ---
 
+## AI Integration
+
+The backend exposes an AI-powered suggestion endpoint via [OpenRouter](https://openrouter.ai/), a unified API gateway that routes requests to free LLMs.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | *(required)* | Get yours at https://openrouter.ai/keys |
+| `OPENROUTER_MODEL` | `meta-llama/llama-3.3-70b-instruct:free` | Primary model |
+| `OPENROUTER_FALLBACK_MODELS` | *(see `.env.example`)* | Comma-separated fallback models |
+
+**How it works:**
+1. Client sends `POST /ai/suggest` with a natural-language `prompt` (e.g., *"mau bikin rendang untuk 5 porsi"*).
+2. The server calls the primary model via OpenRouter. If it is unavailable (429/503/404), it automatically retries with each fallback model in order.
+3. The response is parsed and returned as a JSON array of up to 8 shopping items.
+4. Requests are rate-limited to **10 per minute** per IP.
+
+**AI Endpoint:**
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `POST` | `/ai/suggest` | `{ "prompt": "mau bikin rendang" }` | `{ "items": ["..."], "model": "..." }` |
+
+---
+
 ## API Endpoints
 
 | Method | Path | Body | Response |
@@ -91,6 +115,7 @@ pwam-shopping-backend/
 ├── .gitignore
 ├── db.js          ← SQLite connection & table setup
 ├── server.js      ← Express app & routes
+├── ai.js          ← OpenRouter AI suggestion endpoint
 └── package.json
 ```
 
