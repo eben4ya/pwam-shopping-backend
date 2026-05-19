@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
+const aiRouter = require('./ai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,6 +11,8 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
+
+app.use('/ai', aiRouter);
 
 app.get('/items', (req, res) => {
   const items = db.prepare('SELECT * FROM items').all();
