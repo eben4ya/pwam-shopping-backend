@@ -93,6 +93,65 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+const vercelAction = async (action) => {
+  const { VERCEL_TOKEN, VERCEL_TEAM_ID, VERCEL_PROJECT_ID_FE, VERCEL_PROJECT_ID_BE } = process.env;
+
+  if (!VERCEL_TOKEN || !VERCEL_TEAM_ID || !VERCEL_PROJECT_ID_FE || !VERCEL_PROJECT_ID_BE) {
+    return { error: 'Vercel env vars not configured' };
+  }
+
+  const callProject = async (projectId) => {
+    const r = await fetch(
+      `https://api.vercel.com/v1/projects/${projectId}/${action}?teamId=${VERCEL_TEAM_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return { ok: r.ok, status: r.status, body: await r.json().catch(() => null) };
+  };
+
+  const [fe, be] = await Promise.all([
+    callProject(VERCEL_PROJECT_ID_FE),
+    callProject(VERCEL_PROJECT_ID_BE),
+  ]);
+
+  return { fe, be };
+};
+
+app.post('/vercel/pause', async (req, res) => {
+  try {
+    const result = await vercelAction('pause');
+    if (result.error) return res.status(500).json({ error: result.error });
+    const { fe, be } = result;
+    res.status(fe.ok && be.ok ? 200 : 502).json({
+      frontend: { projectId: process.env.VERCEL_PROJECT_ID_FE, ...fe },
+      backend: { projectId: process.env.VERCEL_PROJECT_ID_BE, ...be },
+    });
+  } catch (err) {
+    console.error('POST /vercel/pause error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/vercel/resume', async (req, res) => {
+  try {
+    const result = await vercelAction('unpause');
+    if (result.error) return res.status(500).json({ error: result.error });
+    const { fe, be } = result;
+    res.status(fe.ok && be.ok ? 200 : 502).json({
+      frontend: { projectId: process.env.VERCEL_PROJECT_ID_FE, ...fe },
+      backend: { projectId: process.env.VERCEL_PROJECT_ID_BE, ...be },
+    });
+  } catch (err) {
+    console.error('POST /vercel/resume error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 if (!process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
